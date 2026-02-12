@@ -1,0 +1,17 @@
+{
+  "name": "vip-discord-bot",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "Bot Discord para integrar com o backend VIP",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "deploy:commands": "node src/registerCommands.js",
+    "check": "node --check src/index.js && node --check src/registerCommands.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5"
+  }
+}
