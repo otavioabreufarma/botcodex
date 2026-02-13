@@ -1,4 +1,13 @@
-import { SlashCommandBuilder } from 'discord.js';
+import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  EmbedBuilder,
+  ModalBuilder,
+  SlashCommandBuilder,
+  TextInputBuilder,
+  TextInputStyle
+} from 'discord.js';
 import {
   activateVip,
   createCheckout,
@@ -60,7 +69,10 @@ export const commandDefinitions = [
         .setName('plan')
         .setDescription('Plano a comprar (padrão: vip-default)')
         .setRequired(false)
-    )
+    ),
+  new SlashCommandBuilder()
+    .setName('vip-painel')
+    .setDescription('Abre um painel com botões para vincular Steam e comprar VIP')
 ];
 
 function formatVip(vip) {
@@ -137,7 +149,185 @@ function watchPaymentConfirmation({ steamId, user }) {
   paymentWatchers.set(key, intervalId);
 }
 
+function buildStatusEmbed(vip, steamId) {
+  const isActive = Boolean(vip && (vip.is_active ?? vip.isActive));
+
+  return new EmbedBuilder()
+    .setTitle('Status do VIP')
+    .setColor(isActive ? 0x57f287 : 0xed4245)
+    .setDescription(formatVip(vip))
+    .addFields({ name: 'SteamID consultado', value: steamId })
+    .setTimestamp();
+}
+
+function buildCheckoutEmbed({ plan, steamId }) {
+  return new EmbedBuilder()
+    .setTitle('Checkout VIP criado')
+    .setColor(0x5865f2)
+    .setDescription('Use os botões abaixo para concluir o pagamento e vincular sua Steam.')
+    .addFields(
+      { name: 'Plano', value: plan, inline: true },
+      { name: 'SteamID', value: steamId, inline: true },
+      { name: 'Sincronização', value: 'Você receberá DM quando o pagamento for confirmado.' }
+    )
+    .setTimestamp()
+    .setFooter({ text: 'Integração em tempo real com o backend' });
+}
+
+function buildVipPanelComponents() {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('vip:link_steam')
+        .setLabel('Vincular Steam')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('vip:buy')
+        .setLabel('Comprar VIP')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId('vip:status')
+        .setLabel('Consultar status')
+        .setStyle(ButtonStyle.Secondary)
+    )
+  ];
+}
+
+function buildLinkRow({ checkoutUrl, steamAuthUrl }) {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setLabel('Abrir checkout').setStyle(ButtonStyle.Link).setURL(checkoutUrl),
+      new ButtonBuilder()
+        .setLabel('Vincular Steam')
+        .setStyle(ButtonStyle.Link)
+        .setURL(steamAuthUrl)
+    )
+  ];
+}
+
+function buildSteamIdModal({ customId, title, includePlan = false }) {
+  const steamInput = new TextInputBuilder()
+    .setCustomId('steamid')
+    .setLabel('SteamID64 (17 dígitos)')
+    .setStyle(TextInputStyle.Short)
+    .setMinLength(17)
+    .setMaxLength(17)
+    .setRequired(true)
+    .setPlaceholder('7656119...');
+
+  const rows = [new ActionRowBuilder().addComponents(steamInput)];
+
+  if (includePlan) {
+    const planInput = new TextInputBuilder()
+      .setCustomId('plan')
+      .setLabel('Plano')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false)
+      .setPlaceholder('vip-default');
+
+    rows.push(new ActionRowBuilder().addComponents(planInput));
+  }
+
+  return new ModalBuilder().setCustomId(customId).setTitle(title).addComponents(rows);
+}
+
+async function handleVipPanelButton(interaction) {
+  switch (interaction.customId) {
+    case 'vip:link_steam': {
+      await interaction.deferReply({ ephemeral: true });
+      const { redirectUrl } = await getSteamAuthUrl(interaction.user.id);
+      const embed = new EmbedBuilder()
+        .setTitle('Vincular conta Steam')
+        .setDescription('Clique no botão abaixo para iniciar o vínculo da sua Steam com o backend.')
+        .setColor(0x5865f2);
+
+      await interaction.editReply({
+        embeds: [embed],
+        components: [
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setStyle(ButtonStyle.Link)
+              .setLabel('Abrir vínculo Steam')
+              .setURL(redirectUrl)
+          )
+        ]
+      });
+      return;
+    }
+    case 'vip:buy': {
+      const modal = buildSteamIdModal({
+        customId: 'vip:buy_modal',
+        title: 'Comprar VIP',
+        includePlan: true
+      });
+      await interaction.showModal(modal);
+      return;
+    }
+    case 'vip:status': {
+      const modal = buildSteamIdModal({ customId: 'vip:status_modal', title: 'Consultar status VIP' });
+      await interaction.showModal(modal);
+      return;
+    }
+    default:
+      return;
+  }
+}
+
+async function handleVipModal(interaction) {
+  if (interaction.customId === 'vip:status_modal') {
+    await interaction.deferReply({ ephemeral: true });
+    const steamId = interaction.fields.getTextInputValue('steamid');
+    const { vip } = await getVipStatus(steamId);
+    await interaction.editReply({ embeds: [buildStatusEmbed(vip, steamId)] });
+    return;
+  }
+
+  if (interaction.customId === 'vip:buy_modal') {
+    await interaction.deferReply({ ephemeral: true });
+    const steamId = interaction.fields.getTextInputValue('steamid');
+    const plan = interaction.fields.getTextInputValue('plan') || 'vip-default';
+
+    const [checkout, steamAuth] = await Promise.all([
+      createCheckout({ discordId: interaction.user.id, steamId, plan }),
+      getSteamAuthUrl(interaction.user.id)
+    ]);
+
+    watchPaymentConfirmation({ steamId, user: interaction.user });
+
+    await interaction.editReply({
+      embeds: [
+        buildCheckoutEmbed({
+          plan,
+          steamId
+        })
+      ],
+      components: buildLinkRow({ checkoutUrl: checkout.checkoutUrl, steamAuthUrl: steamAuth.redirectUrl })
+    });
+
+    await sendDm(
+      interaction.user,
+      [
+        '🧾 Seu checkout foi criado.',
+        `Plano: ${plan}`,
+        `SteamID: ${steamId}`,
+        `Checkout: ${checkout.checkoutUrl}`,
+        `Vincular Steam: ${steamAuth.redirectUrl}`
+      ].join('\n')
+    );
+  }
+}
+
 export async function handleInteraction(interaction) {
+  if (interaction.isButton()) {
+    await handleVipPanelButton(interaction);
+    return;
+  }
+
+  if (interaction.isModalSubmit()) {
+    await handleVipModal(interaction);
+    return;
+  }
+
   if (!interaction.isChatInputCommand()) {
     return;
   }
@@ -233,6 +423,27 @@ export async function handleInteraction(interaction) {
             ].join('\n');
 
         await interaction.editReply(reply);
+        return;
+      }
+      case 'vip-painel': {
+        const embed = new EmbedBuilder()
+          .setTitle('Painel VIP')
+          .setDescription(
+            [
+              'Use os botões para interagir com o backend de forma rápida:',
+              '• Vincular sua Steam',
+              '• Comprar VIP',
+              '• Consultar status do VIP'
+            ].join('\n')
+          )
+          .setColor(0x5865f2)
+          .setFooter({ text: 'Fluxo responsivo para desktop e mobile no Discord' });
+
+        await interaction.reply({
+          ephemeral: true,
+          embeds: [embed],
+          components: buildVipPanelComponents()
+        });
         return;
       }
       default:
