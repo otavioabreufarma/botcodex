@@ -12,15 +12,22 @@ function buildUrl(pathname) {
   return new URL(pathname, BACKEND_BASE_URL).toString();
 }
 
-async function backendRequest(pathname, { method = 'GET', body } = {}) {
-  requireEnv(BACKEND_API_KEY, 'BACKEND_API_KEY');
+async function backendRequest(pathname, { method = 'GET', body, withAuth = true } = {}) {
+  if (withAuth) {
+    requireEnv(BACKEND_API_KEY, 'BACKEND_API_KEY');
+  }
+
+  const headers = {
+    'Content-Type': 'application/json'
+  };
+
+  if (withAuth) {
+    headers.Authorization = `Bearer ${BACKEND_API_KEY}`;
+  }
 
   const response = await fetch(buildUrl(pathname), {
     method,
-    headers: {
-      Authorization: `Bearer ${BACKEND_API_KEY}`,
-      'Content-Type': 'application/json'
-    },
+    headers,
     body: body ? JSON.stringify(body) : undefined
   });
 
@@ -54,4 +61,18 @@ export async function deactivateVip({ steamId }) {
 
 export async function getSteamLink(discordId) {
   return backendRequest(`/api/vip/steam-link/${encodeURIComponent(discordId)}`);
+}
+
+export async function getSteamAuthUrl(discordId) {
+  return backendRequest(`/api/auth/steam/start?discordId=${encodeURIComponent(discordId)}`, {
+    withAuth: false
+  });
+}
+
+export async function createCheckout({ discordId, steamId, plan = 'vip-default' }) {
+  return backendRequest('/api/orders/checkout', {
+    method: 'POST',
+    withAuth: false,
+    body: { discordId, steamId, plan }
+  });
 }

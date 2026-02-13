@@ -1,6 +1,6 @@
 # Bot Discord para VIP
 
-Bot em Node.js que conversa com o backend existente (sem alterar o backend), usando as rotas protegidas de VIP.
+Bot em Node.js que conversa com o backend existente (sem alterar o backend), usando rotas de VIP, autenticação Steam e criação de checkout.
 
 ## Comandos
 
@@ -8,6 +8,8 @@ Bot em Node.js que conversa com o backend existente (sem alterar o backend), usa
 - `/vip-ativar steamid:<id> [discordid:<id>]`
 - `/vip-remover steamid:<id>`
 - `/vip-link-steam discordid:<id>`
+- `/steam-vincular` (usa seu Discord ID e envia o link Steam por DM)
+- `/pagamento-criar steamid:<id> [plan:<plano>]` (cria checkout, envia links por DM e monitora confirmação)
 
 ## Configuração
 
@@ -35,7 +37,7 @@ cp .env.example .env
 - `DISCORD_CLIENT_ID`: application/client id do bot.
 - `DISCORD_GUILD_ID`: id do servidor Discord (registro rápido de slash commands por guild).
 - `BACKEND_BASE_URL`: URL base do backend (ex.: `https://meu-backend.discloud.app`).
-- `BACKEND_API_KEY`: a mesma `API_KEY` do backend.
+- `BACKEND_API_KEY`: a mesma `API_KEY` do backend (necessária para rotas protegidas).
 
 ## Registrar comandos
 
@@ -51,6 +53,10 @@ npm start
 
 ## Observações
 
-- O bot usa somente chamadas HTTP para o backend já existente.
-- Não precisa alterar nenhuma rota do backend.
-- As respostas são `ephemeral` (visíveis só para quem executou o comando).
+- O bot usa chamadas HTTP para o backend já existente.
+- Fluxo novo de pagamento:
+  - cria checkout (`/api/orders/checkout`),
+  - manda DM de sincronização,
+  - monitora `status` do VIP,
+  - quando ativo, envia DM de pagamento confirmado.
+- As respostas dos slash commands continuam `ephemeral` (visíveis só para quem executou o comando).
