@@ -1,43 +1,79 @@
-import { pool } from '../utils/db.js';
+import { readVipUsers, withDatabaseWrite } from '../utils/db.js';
+
+function cloneVip(user) {
+  return user ? { ...user } : null;
+}
 
 export async function upsertVip({ steamId, discordId = null, source = 'manual' }) {
-  const result = await pool.query(
-    `
-      INSERT INTO vip_users (discord_id, steam_id, vip_active, source, updated_at)
-      VALUES ($1, $2, true, $3, NOW())
-      ON CONFLICT (steam_id)
-      DO UPDATE SET
-        discord_id = COALESCE(EXCLUDED.discord_id, vip_users.discord_id),
-        vip_active = true,
-        source = EXCLUDED.source,
-        updated_at = NOW()
-      RETURNING id, discord_id, steam_id, vip_active, source, created_at, updated_at
-    `,
-    [discordId, steamId, source]
-  );
+  const now = new Date().toISOString();
+  let savedUser = null;
 
-  return result.rows[0];
+  await withDatabaseWrite((database) => {
+    const index = database.vip_users.findIndex((user) => user.steam_id === steamId);
+
+    if (index >= 0) {
+      const currentUser = database.vip_users[index];
+      const updatedUser = {
+        ...currentUser,
+        discord_id: discordId ?? currentUser.discord_id,
+        vip_active: true,
+        source,
+        updated_at: now
+      };
+
+      database.vip_users[index] = updatedUser;
+      savedUser = updatedUser;
+      return database;
+    }
+
+    const createdUser = {
+      id: database.last_id + 1,
+      discord_id: discordId,
+      steam_id: steamId,
+      vip_active: true,
+      source,
+      created_at: now,
+      updated_at: now
+    };
+
+    database.last_id = createdUser.id;
+    database.vip_users.push(createdUser);
+    savedUser = createdUser;
+
+    return database;
+  });
+
+  return cloneVip(savedUser);
 }
 
 export async function deactivateVip({ steamId, source = 'manual' }) {
-  const result = await pool.query(
-    `
-      UPDATE vip_users
-      SET vip_active = false, source = $2, updated_at = NOW()
-      WHERE steam_id = $1
-      RETURNING id, discord_id, steam_id, vip_active, source, created_at, updated_at
-    `,
-    [steamId, source]
-  );
+  let updatedUser = null;
 
-  return result.rows[0] ?? null;
+  await withDatabaseWrite((database) => {
+    const index = database.vip_users.findIndex((user) => user.steam_id === steamId);
+
+    if (index < 0) {
+      return database;
+    }
+
+    const currentUser = database.vip_users[index];
+    updatedUser = {
+      ...currentUser,
+      vip_active: false,
+      source,
+      updated_at: new Date().toISOString()
+    };
+
+    database.vip_users[index] = updatedUser;
+    return database;
+  });
+
+  return cloneVip(updatedUser);
 }
 
 export async function getVipStatus(steamId) {
-  const result = await pool.query(
-    `SELECT id, discord_id, steam_id, vip_active, source, created_at, updated_at FROM vip_users WHERE steam_id = $1`,
-    [steamId]
-  );
+  const users = await readVipUsers();
+  const vipUser = users.find((user) => user.steam_id === steamId);
 
-  return result.rows[0] ?? null;
+  return cloneVip(vipUser ?? null);
 }

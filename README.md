@@ -29,7 +29,7 @@ src/
 ## Requisitos
 
 - Node.js 18+
-- PostgreSQL externo (via `DATABASE_URL`)
+- Banco local em JSON (`data/db.json` por padrão)
 
 ## Configuração do `.env`
 
@@ -42,7 +42,7 @@ cp .env.example .env
 2. Preencha as variáveis:
 
 - `API_KEY`: chave usada em `Authorization: Bearer <API_KEY>` nas rotas protegidas.
-- `DATABASE_URL`: conexão PostgreSQL externa.
+- `JSON_DB_PATH` (opcional): caminho do arquivo JSON local (padrão `data/db.json`).
 - `PUBLIC_BASE_URL`: URL pública HTTPS da Discloud.
 - `INFINITEPAY_WEBHOOK_SECRET`: segredo do webhook da InfinitePay.
 - `RUST1_SERVER_KEY` e `RUST2_SERVER_KEY`: chaves dos servidores Rust.
@@ -103,7 +103,7 @@ Endpoint: `POST /api/orders/webhook/infinitepay`
 
 - Não exige `Authorization`.
 - Exige header `x-infinitepay-secret` igual a `INFINITEPAY_WEBHOOK_SECRET`.
-- Quando `status=confirmed`, ativa VIP no banco usando `metadata.steamId`.
+- Quando `status=confirmed`, ativa VIP no banco JSON usando `metadata.steamId`.
 
 Exemplo de payload:
 
