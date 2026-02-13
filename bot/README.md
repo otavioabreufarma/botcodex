@@ -10,6 +10,7 @@ Bot em Node.js que conversa com o backend existente (sem alterar o backend), usa
 - `/vip-link-steam discordid:<id>`
 - `/steam-vincular` (usa seu Discord ID e envia o link Steam por DM)
 - `/pagamento-criar steamid:<id> [plan:<plano>]` (cria checkout, envia links por DM e monitora confirmação)
+- `/vip-painel` (embed com botões para vincular Steam, comprar VIP e consultar status)
 
 ## Configuração
 
